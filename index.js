@@ -75,6 +75,13 @@ io.on("connection", (socket) => {
     }
   })
 
+  socket.on("sender", (data) => {
+    const sendUserSocket = onlineUsers.get(data.userId)
+    if (sendUserSocket) {
+      socket.to(sendUserSocket).emit("receive-from-sender", data)
+    }
+  })
+
   /* sended when user receiving bottom of div element */
   socket.on("message-read", (messageId) => {
     const senderSocketId = onlineUsers.get(messageId)
@@ -114,18 +121,21 @@ io.on("connection", (socket) => {
   // })
 
   /* receive recepientId when typing */
-  socket.on("typing", (recipientId) => {
-    if (connectedUsers[recipientId]) {
+  socket.on("typing", (data) => {
+    console.log(data)
+    const recipient = onlineUsers.get(data.userId)
+    if (recipient) {
       /* send event to recepient */
-      connectedUsers[recipientId].emit("typing")
+      socket.to(recipient).emit("typing", data)
     }
   })
 
   /* receive recepientId when stop typing */
-  socket.on("stopTyping", (recipientId) => {
-    if (connectedUsers[recipientId]) {
+  socket.on("stopTyping", (data) => {
+    const recipient = onlineUsers.get(data.userId)
+    if (recipient) {
       /* send event to recepient */
-      connectedUsers[recipientId].emit("stopTyping")
+      socket.to(recipient).emit("stopTyping", data)
     }
   })
 })
