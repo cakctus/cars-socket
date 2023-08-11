@@ -8,6 +8,8 @@ import cors from "cors"
 import { Server } from "socket.io"
 // http
 import { createServer } from "http"
+// axios
+import axios from "axios"
 
 const app = express()
 const server = createServer(app)
@@ -84,7 +86,7 @@ io.on("connection", (socket) => {
 
   /* sended when user receiving bottom of div element */
   socket.on("message-read", (messageId) => {
-    const senderSocketId = onlineUsers.get(messageId)
+    const senderSocketId = onlineUsers.get(messageId.user)
     /* Notify the sender that the message has been read */
     if (senderSocketId) {
       // connectedUsers.emit("message-read-notification", messageId)
@@ -99,11 +101,17 @@ io.on("connection", (socket) => {
     if (recipient) {
       /*if recipient is online send recevied true */
       socket.emit("message-sended", {
+        from: data.from,
         received: true,
+        to: data.to,
       })
     } else {
-      /*if recipient is not online send recevied true */
-      socket.emit("message-sended", { received: false })
+      /*if recipient is not online send recevied false */
+      socket.emit("message-sended", {
+        from: data.from,
+        received: false,
+        to: data.to,
+      })
     }
   })
 
@@ -122,7 +130,6 @@ io.on("connection", (socket) => {
 
   /* receive recepientId when typing */
   socket.on("typing", (data) => {
-    console.log(data)
     const recipient = onlineUsers.get(data.userId)
     if (recipient) {
       /* send event to recepient */
