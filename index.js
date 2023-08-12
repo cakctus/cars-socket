@@ -26,6 +26,7 @@ const io = new Server(server, {
 })
 
 const onlineUsers = new Map()
+const lastVisit = new Map()
 
 const connectedUsers = {}
 
@@ -35,8 +36,16 @@ io.on("connection", (socket) => {
     /* set user in a map */
     onlineUsers.set(userId, socket.id)
 
+    lastVisit.set(userId, {
+      socketId: socket.id,
+      timestamp: new Date(),
+      online: true,
+    })
+
     /* send user to client */
     io.emit("user-status-change", Array.from(onlineUsers))
+
+    io.emit("last-logout", Array.from(lastVisit))
 
     /* when user is disconnecting  */
     socket.on("disconnect", () => {
@@ -48,8 +57,49 @@ io.on("connection", (socket) => {
         /* send updating data to the client */
         io.emit("exit-user", userId)
       }
+
+      const userData = lastVisit.get(userId)
+
+      if (userData) {
+        // Mark user as offline and update timestamp
+        lastVisit.set(userId, {
+          socketId: socket.id,
+          timestamp: new Date(),
+          online: false,
+        })
+
+        io.emit("exit-user2", Array.from(lastVisit))
+      }
     })
   })
+
+  // socket.on("add-user", (userId) => {
+  //   // Set user in the map with current timestamp and online status
+  //   lastVisit.set(userId, {
+  //     socketId: socket.id,
+  //     timestamp: new Date(),
+  //     online: true,
+  //   })
+
+  //   // Send updated online user list to clients
+  //   io.emit("last-logout", Array.from(lastVisit))
+
+  //   // When user is disconnecting
+  //   socket.on("disconnect", () => {
+  //     const userData = lastVisit.get(userId)
+
+  //     if (userData) {
+  //       // Mark user as offline and update timestamp
+  //       lastVisit.set(userId, {
+  //         socketId: socket.id,
+  //         timestamp: new Date(),
+  //         online: false,
+  //       })
+
+  //       io.emit("exit-user2", Array.from(lastVisit))
+  //     }
+  //   })
+  // })
 
   // socket.on("send-message", (message) => {
   //   // Save the message to the database or perform any desired actions
@@ -90,7 +140,9 @@ io.on("connection", (socket) => {
     /* Notify the sender that the message has been read */
     if (senderSocketId) {
       // connectedUsers.emit("message-read-notification", messageId)
-      socket.to(senderSocketId).emit("message-read-notification", messageId)
+      socket
+        .to(senderSocketId)
+        .emit("message-read-notification", { ...messageId, id: socket.id })
     }
   })
 
