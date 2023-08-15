@@ -112,6 +112,7 @@ io.on("connection", (socket) => {
   socket.on("send-msg", (data) => {
     /* from */
     // const socketFrom = onlineUsers.get(data.from)
+
     /* to */
     const sendUserSocket = onlineUsers.get(data.to)
 
@@ -140,9 +141,21 @@ io.on("connection", (socket) => {
     /* Notify the sender that the message has been read */
     if (senderSocketId) {
       // connectedUsers.emit("message-read-notification", messageId)
-      socket
-        .to(senderSocketId)
-        .emit("message-read-notification", { ...messageId, id: socket.id })
+      socket.broadcast.emit("message-read-notification", {
+        ...messageId,
+        id: socket.id,
+        id2: messageId.id,
+        fromSelf: senderSocketId,
+        shouldEmit: senderSocketId === onlineUsers.get(messageId.id),
+      })
+    }
+  })
+
+  socket.on("add-chat", (data) => {
+    const recipient = onlineUsers.get(data.id)
+
+    if (recipient) {
+      socket.to(recipient).emit("added-chat", data)
     }
   })
 
