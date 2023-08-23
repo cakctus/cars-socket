@@ -8,8 +8,6 @@ import cors from "cors"
 import { Server } from "socket.io"
 // http
 import { createServer } from "http"
-// axios
-import axios from "axios"
 
 const app = express()
 const server = createServer(app)
@@ -27,19 +25,32 @@ const io = new Server(server, {
 
 const onlineUsers = new Map()
 const lastVisit = new Map()
+const requestCounts = new Map()
+const disconnectTimers = new Map()
 
 const connectedUsers = {}
+let timer
 
 io.on("connection", (socket) => {
   /* receiving user from the client */
   socket.on("add-user", (userId) => {
+    // const userData = lastVisit.get(userId)
+
     /* set user in a map */
     onlineUsers.set(userId, socket.id)
 
+    console.log("connect", lastVisit.get(userId))
+    // console.log(timer)
+    if (lastVisit.get(userId)?.disconnectTimeout) {
+      clearTimeout(timer)
+    }
+
     lastVisit.set(userId, {
       socketId: socket.id,
+      id: userId,
       timestamp: new Date(),
       online: true,
+      connected: true,
     })
 
     /* send user to client */
@@ -48,7 +59,7 @@ io.on("connection", (socket) => {
     io.emit("last-logout", Array.from(lastVisit))
 
     /* when user is disconnecting  */
-    socket.on("disconnect", () => {
+    socket.on("disconnect", async () => {
       const userId = [...onlineUsers.entries()].find(
         ([key, value]) => value === socket.id
       )?.[0]
@@ -58,19 +69,116 @@ io.on("connection", (socket) => {
         io.emit("exit-user", userId)
       }
 
+      console.log("disconnect")
+      lastVisit.set(userId, {
+        socketId: socket.id,
+        id: userId,
+        timestamp: new Date(),
+        connected: false,
+        disconnectTimeout: "asd",
+      })
+
       const userData = lastVisit.get(userId)
 
       if (userData) {
-        // Mark user as offline and update timestamp
-        lastVisit.set(userId, {
-          socketId: socket.id,
-          timestamp: new Date(),
-          online: false,
-        })
+        const disconnectTime = new Date()
+        userData.disconnectTimeout = "yes"
 
-        io.emit("exit-user2", Array.from(lastVisit))
+        timer = setTimeout(() => {
+          lastVisit.set(userId, {
+            socketId: socket.id,
+            id: userId,
+            timestamp: disconnectTime,
+            online: false,
+            connected: false,
+            a: "asd",
+          })
+          console.log("timer set timeout")
+          io.emit("exit-user2", Array.from(lastVisit))
+          // io.emit("user-disconnected", userId) // Emit a user-disconnected event
+        }, 50000)
+
+        // Store the disconnectTimeout in userData for future reference
       }
+
+      // if (userData) {
+      //   const connected = new Promise((resolve, reject) => {
+      //     if (userData) {
+      //       let timer = setTimeout(() => {
+      //         lastVisit.set(userId, {
+      //           socketId: socket.id,
+      //           id: userId,
+      //           timestamp: new Date(),
+      //           online: false,
+      //           connected: false,
+      //         })
+      //         resolve(lastVisit.get(userId), "exit2")
+      //       }, 5000)
+      //     } else {
+      //       reject()
+      //     }
+      //   })
+
+      //   const lastVisitPromise = await connected
+
+      //   console.log(lastVisitPromise, "exit2")
+
+      //   // setTimeout(() => {
+      //   //   const userData = lastVisit.get(userId)
+
+      //   //   console.log("exit1")
+      //   //   if (userData) {
+      //   //     lastVisit.set(userId, {
+      //   //       socketId: socket.id,
+      //   //       id: userId,
+      //   //       timestamp: new Date(),
+      //   //       online: false,
+      //   //     })
+
+      //   //     io.emit("exit-user2", Array.from(lastVisit))
+      //   //   }
+      //   // }, 2000)
+
+      //   // lastVisit.set(userId, {
+      //   //   socketId: socket.id,
+      //   //   id: userId,
+      //   //   timestamp: new Date(),
+      //   //   online: false,
+      //   // })
+      // }
     })
+
+    // // Clear any existing timer for the user
+    // if (disconnectTimers.has(userId)) {
+    //   clearTimeout(disconnectTimers.get(userId))
+    // }
+
+    // // Set a new timer for 3 seconds
+    // disconnectTimers.set(
+    //   userId,
+    //   setTimeout(() => {
+    //     const currentUserData = lastVisit.get(userId)
+
+    //     if (currentUserData) {
+    //       const currentTime = new Date().getTime()
+    //       const disconnectTime = new Date(currentUserData.timestamp).getTime()
+    //       const timeDifference = currentTime - disconnectTime
+
+    //       if (timeDifference >= 3000) {
+    //         // User has been disconnected for more than 3 seconds
+    //         const originalTimestamp = new Date(currentUserData.timestamp)
+    //         originalTimestamp.setSeconds(originalTimestamp.getSeconds() + 5)
+    //         // console.log(originalTimestamp)
+
+    //         // Perform additional logic here
+    //         requestCounts.set(userId, 0)
+    //       }
+    //     }
+
+    //     // Clear the timer from the Map
+    //     disconnectTimers.delete(userId)
+    //   }, 3000)
+    // )
   })
 
   // socket.on("add-user", (userId) => {
@@ -163,6 +271,7 @@ io.on("connection", (socket) => {
   socket.on("send-message", (data) => {
     const recipient = onlineUsers.get(data.to)
     // const sender = onlineUsers.get(message.from)
+
     if (recipient) {
       /*if recipient is online send recevied true */
       socket.emit("message-sended", {
@@ -173,6 +282,44 @@ io.on("connection", (socket) => {
     } else {
       /*if recipient is not online send recevied false */
       socket.emit("message-sended", {
+        from: data.from,
+        received: false,
+        to: data.to,
+      })
+    }
+  })
+
+  socket.on("check-user-online", (data) => {
+    const user = onlineUsers.get(data.from)
+
+    if (user) {
+      socket.broadcast.emit("message-sended2", {
+        from: data.from,
+        received: true,
+        count: requestCounts.get(data.from),
+      })
+    } else {
+      /*if recipient is not online send recevied false */
+      socket.broadcast.emit("message-sended2", {
+        from: data.from,
+        received: false,
+        count: requestCounts.get(data.from),
+      })
+    }
+  })
+
+  socket.on("update-message-received", (data) => {
+    const user = onlineUsers.get(data.to)
+    console.log("update-message-received")
+    if (user) {
+      socket.emit("message-sended3", {
+        from: data.from,
+        to: data.to,
+        received: true,
+      })
+    } else {
+      /*if recipient is not online send recevied false */
+      socket.emit("message-sended3", {
         from: data.from,
         received: false,
         to: data.to,
