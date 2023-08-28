@@ -30,6 +30,7 @@ const disconnectTimers = new Map()
 
 const connectedUsers = {}
 let timer
+let connectedTimer
 
 io.on("connection", (socket) => {
   /* receiving user from the client */
@@ -39,24 +40,48 @@ io.on("connection", (socket) => {
     /* set user in a map */
     onlineUsers.set(userId, socket.id)
 
-    console.log("connect", lastVisit.get(userId))
     // console.log(timer)
     if (lastVisit.get(userId)?.disconnectTimeout) {
       clearTimeout(timer)
     }
 
-    lastVisit.set(userId, {
-      socketId: socket.id,
-      id: userId,
-      timestamp: new Date(),
-      online: true,
-      connected: true,
-    })
+    console.log("connect", lastVisit.get(userId))
+
+    if (lastVisit.get(userId)?.disconnectTimeout) {
+      lastVisit.set(userId, {
+        socketId: socket.id,
+        id: userId,
+        timestamp: new Date(),
+        online: true,
+        connected: true,
+        resendConnect: "yes",
+      })
+    } else {
+      lastVisit.set(userId, {
+        socketId: socket.id,
+        id: userId,
+        timestamp: new Date(),
+        online: true,
+        connected: true,
+      })
+    }
+
+    console.log("connect", lastVisit.get(userId))
 
     /* send user to client */
     io.emit("user-status-change", Array.from(onlineUsers))
 
-    io.emit("last-logout", Array.from(lastVisit))
+    if (!lastVisit.get(userId)?.resendConnect) {
+      console.log("send last-logout")
+      io.emit("last-logout", Array.from(lastVisit))
+    }
+
+    const userData = lastVisit.get(userId)
+
+    if (userData) {
+      console.log("lastVisitSelf")
+      socket.emit("lastVisitSelf", Array.from(lastVisit))
+    }
 
     /* when user is disconnecting  */
     socket.on("disconnect", async () => {
@@ -69,14 +94,18 @@ io.on("connection", (socket) => {
         io.emit("exit-user", userId)
       }
 
-      console.log("disconnect")
-      lastVisit.set(userId, {
-        socketId: socket.id,
-        id: userId,
-        timestamp: new Date(),
-        connected: false,
-        disconnectTimeout: "asd",
-      })
+      if (lastVisit.get(userId)?.online) {
+        clearTimeout(connectedTimer)
+      }
+
+      console.log("disconnect", lastVisit.get(userId))
+      // lastVisit.set(userId, {
+      //   socketId: socket.id,
+      //   id: userId,
+      //   timestamp: new Date(),
+      //   connected: false,
+      //   disconnectTimeout: "asd",
+      // })
 
       const userData = lastVisit.get(userId)
 
@@ -91,9 +120,9 @@ io.on("connection", (socket) => {
             timestamp: disconnectTime,
             online: false,
             connected: false,
-            a: "asd",
+            // disconnectTimeout: "asd",
           })
-          console.log("timer set timeout")
+          console.log("timer set timeout", lastVisit.get(userId))
           io.emit("exit-user2", Array.from(lastVisit))
           // io.emit("user-disconnected", userId) // Emit a user-disconnected event
         }, 50000)
