@@ -30,10 +30,13 @@ const requestCounts = new Map()
 const disconnectTimers = new Map()
 
 const connectedUsers = {}
+let timer
 
 io.on("connection", (socket) => {
   /* receiving user from the client */
   socket.on("add-user", (userId) => {
+    // const userData = lastVisit.get(userId)
+
     /* set user in a map */
     onlineUsers.set(userId, socket.id)
 
@@ -62,16 +65,21 @@ io.on("connection", (socket) => {
     console.log("connect", lastVisit.get(userId))
 
     if (!lastVisit.get(userId)?.resendConnect) {
+      // console.log("send last-logout")
       io.emit("last-logout", Array.from(lastVisit))
     }
 
     const userData = lastVisit.get(userId)
 
     if (userData) {
+      // console.log("lastVisitSelf")
       socket.emit("lastVisitSelf", Array.from(lastVisit))
     }
 
-    io.emit("update-received-message-status", Array.from(onlineUsers)) // io.emit
+    socket.broadcast.emit(
+      "update-received-message-status",
+      Array.from(onlineUsers)
+    ) // io.emit
 
     /* when user is disconnecting  */
     socket.on("disconnect", async () => {
@@ -81,7 +89,7 @@ io.on("connection", (socket) => {
       if (userId) {
         onlineUsers.delete(userId)
         /* send updating data to the client */
-        // io.emit("exit-user", userId)
+        io.emit("exit-user", userId)
       }
 
       lastVisit.set(userId, {
@@ -90,7 +98,7 @@ io.on("connection", (socket) => {
         timestamp: new Date(),
         online: true,
         connected: true,
-        disconnectTimeout: "yes",
+        disconnectTimeout: "asd",
       })
 
       console.log("disconnect", lastVisit.get(userId))
@@ -296,15 +304,14 @@ io.on("connection", (socket) => {
   /* sended when user receiving bottom of div element */
   socket.on("message-read", (messageId) => {
     const senderSocketId = onlineUsers.get(messageId.user)
-    console.log(messageId, "message-read")
     /* Notify the sender that the message has been read */
     if (senderSocketId) {
       // connectedUsers.emit("message-read-notification", messageId)
-      socket.to(senderSocketId).emit("message-read-notification", {
+      socket.broadcast.emit("message-read-notification", {
         ...messageId,
         id: socket.id,
         id2: messageId.id,
-        fromSelf: messageId.user,
+        fromSelf: senderSocketId,
         shouldEmit: senderSocketId === onlineUsers.get(messageId.id),
       })
     }
@@ -340,7 +347,6 @@ io.on("connection", (socket) => {
     }
   })
 
-  /* update message status when user become online */
   socket.on("check-user-online", (data) => {
     const user = onlineUsers.get(data.from)
 
