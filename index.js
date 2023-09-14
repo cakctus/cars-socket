@@ -4,14 +4,17 @@ dotenv.config()
 // express
 import express from "express"
 import cors from "cors"
+import axios from "axios"
 // socket.io
 import { Server } from "socket.io"
 // http
 import { createServer } from "http"
+import { randomUUID } from "node:crypto"
 
 const app = express()
 const server = createServer(app)
 const clientUrl = process.env.CLIENT_URL
+const serverUrl = process.env.SERVER_URL
 
 server.listen(5001, () => {
   console.log("server is running")
@@ -29,15 +32,47 @@ const lastVisit = new Map()
 const requestCounts = new Map()
 const disconnectTimers = new Map()
 
+// Create a Map to store session IDs and sockets for each user
+const userSessions = new Map()
+
 const connectedUsers = {}
 
 io.on("connection", (socket) => {
   /* receiving user from the client */
   socket.on("add-user", (userId) => {
+    socket[userId] = userId
+
+    const sessionId = randomUUID()
+
+    socket.sessionId = sessionId
+
+    // Identify the user (e.g., using socket.handshake.query.userId)
+    const uId = socket[userId]
+
+    // Check if this is the first connection for this user
+    if (!userSessions.has(uId)) {
+      userSessions.set(uId, {
+        firstTabSessionId: sessionId,
+        sockets: new Map(),
+      })
+    }
+
+    const userSession = userSessions.get(uId)
+    const { firstTabSessionId, sockets } = userSession
+
+    if (sessionId !== firstTabSessionId) {
+      userSession.firstTabSessionId = sessionId
+    }
+
+    // Store the socket in the user's sockets map
+    sockets.set(sessionId, socket)
+
+    console.log(socket[userId])
+
     /* set user in a map */
     onlineUsers.set(userId, socket.id)
 
-    console.log("connect", disconnectTimers.get(userId))
+    // console.log("connect", disconnectTimers.get(userId))
 
     if (lastVisit.get(userId)?.disconnectTimeout) {
       lastVisit.set(userId, {
@@ -59,7 +94,7 @@ io.on("connection", (socket) => {
       })
     }
 
-    console.log("connect", lastVisit.get(userId))
+    // console.log("connect", lastVisit.get(userId))
 
     if (!lastVisit.get(userId)?.resendConnect) {
       io.emit("last-logout", Array.from(lastVisit))
@@ -75,13 +110,33 @@ io.on("connection", (socket) => {
 
     /* when user is disconnecting  */
     socket.on("disconnect", async () => {
-      const userId = [...onlineUsers.entries()].find(
+      const userI = [...onlineUsers.entries()].find(
         ([key, value]) => value === socket.id
       )?.[0]
-      if (userId) {
-        onlineUsers.delete(userId)
+      if (userI) {
+        onlineUsers.delete(userI)
         /* send updating data to the client */
         // io.emit("exit-user", userId)
+      }
+
+      const sessionId = socket.sessionId
+
+      // Check if the disconnected socket is the first session for this user
+      if (sessionId === firstTabSessionId) {
+        console.log(
+          `The first tab for user  ${sessionId} and firstTabSessionId ${firstTabSessionId} disconnected. ${userId}`
+        )
+        // Handle the disconnect of the first tab for this user here
+      }
+
+      // Perform other disconnect logic as needed
+
+      // Remove the session from the user's sockets map
+      sockets.delete(sessionId)
+
+      // If there are no more sessions for this user, remove the user entry
+      if (sockets.size === 0) {
+        userSessions.delete(socket[userId])
       }
 
       lastVisit.set(userId, {
@@ -93,7 +148,7 @@ io.on("connection", (socket) => {
         disconnectTimeout: "yes",
       })
 
-      console.log("disconnect", lastVisit.get(userId))
+      // console.log("disconnect", lastVisit.get(userId))
 
       const userData = lastVisit.get(userId)
 
@@ -257,7 +312,7 @@ io.on("connection", (socket) => {
   // })
 
   socket.on("delete-timer-id", (id) => {
-    console.log(`delete timer id ${id}`)
+    // console.log(`delete timer id ${id}`)
     if (
       disconnectTimers.get(id) &&
       disconnectTimers.get(id).timeoutId !== null
@@ -286,6 +341,14 @@ io.on("connection", (socket) => {
     }
   })
 
+  socket.on("append-msg", (data) => {
+    const from = onlineUsers.get(data.from)
+
+    if (from) {
+      socket.emit("append-msg-me", data)
+    }
+  })
+
   socket.on("sender", (data) => {
     const sendUserSocket = onlineUsers.get(data.userId)
     if (sendUserSocket) {
@@ -310,11 +373,42 @@ io.on("connection", (socket) => {
     }
   })
 
+  socket.on("read-message-database", (msg) => {
+    console.log(msg, "read database")
+    const me = onlineUsers.get(msg.me)
+
+    if (me) {
+      socket.to(me).emit("read-database", {
+        ...msg,
+      })
+    }
+  })
+
+  socket.on("message-read-response", (response) => {
+    console.log(response)
+  })
+
   socket.on("add-chat", (data) => {
     const recipient = onlineUsers.get(data.id)
+    const sender = onlineUsers.get(data.myId)
 
     if (recipient) {
       socket.to(recipient).emit("added-chat", data)
+      console.log("recipient", data)
+    }
+
+    // if (sender) {
+    //   socket.emit("added-chat", data)
+    //   console.log("sender", data)
+    // }
+  })
+
+  /* remove local user state when remove chat for recipient */
+  socket.on("remove-local-user-state", (data) => {
+    const recipient = onlineUsers.get(data.userId)
+
+    if (recipient) {
+      socket.to(recipient).emit("remove-local-user", data)
     }
   })
 
