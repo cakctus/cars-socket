@@ -10,6 +10,8 @@ import { Server } from "socket.io"
 // http
 import { createServer } from "http"
 import { randomUUID } from "node:crypto"
+// utils
+import saveDataByUserId from "./utils/saveKeyByUseId.js"
 
 const app = express()
 const server = createServer(app)
@@ -31,6 +33,7 @@ const onlineUsers = new Map()
 const lastVisit = new Map()
 const requestCounts = new Map()
 const disconnectTimers = new Map()
+const userIdMap = new Map()
 
 // Create a Map to store session IDs and sockets for each user
 const userSessions = new Map()
@@ -107,6 +110,14 @@ io.on("connection", (socket) => {
     }
 
     io.emit("update-received-message-status", Array.from(onlineUsers)) // io.emit
+
+    if (userIdMap.has(userId)) {
+      // If the user's ID exists, retrieve the associated objects
+      const objectsForUser = userIdMap.get(userId)
+
+      // Send the objects back to the user
+      socket.emit("counts-message-for-user", objectsForUser)
+    }
 
     /* when user is disconnecting  */
     socket.on("disconnect", async () => {
@@ -371,6 +382,14 @@ io.on("connection", (socket) => {
         shouldEmit: senderSocketId === onlineUsers.get(messageId.id),
       })
     }
+
+    if (userIdMap.has(messageId.user)) {
+      // If the user's ID exists, retrieve the associated objects
+      const objectsForUser = userIdMap.get(messageId.user)
+
+      // Send the objects back to the user
+      socket.to(senderSocketId).emit("counts-message-for-user", objectsForUser)
+    }
   })
 
   socket.on("read-message-database", (msg) => {
@@ -409,6 +428,25 @@ io.on("connection", (socket) => {
 
     if (recipient) {
       socket.to(recipient).emit("remove-local-user", data)
+    }
+  })
+
+  /* send to oponent unread message count */
+  socket.on("unread-message-count", (data) => {
+    saveDataByUserId(data, userIdMap)
+    const oponent = onlineUsers.get(data.userId)
+    console.log("unread message count", data)
+    if (oponent) {
+      // socket.to(oponent).emit("unread-message-count-from-oponent", data)
+      socket.to(oponent).emit("unread-message-count-from-oponent", data)
+    }
+  })
+
+  socket.on("oponent-read-message-count", (data) => {
+    const me = onlineUsers.get(data.to)
+    console.log("opoenntread chat count", data)
+    if (me) {
+      socket.to(me).emit("oponent-read-message-count-mySelf", data)
     }
   })
 
