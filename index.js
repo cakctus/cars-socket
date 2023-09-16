@@ -12,6 +12,8 @@ import { createServer } from "http"
 import { randomUUID } from "node:crypto"
 // utils
 import saveDataByUserId from "./utils/saveKeyByUseId.js"
+import removeDublicateObject from "./utils/removeDuplicateObject.js"
+import updateUnreadCount from "./utils/updateUnreadCount.js"
 
 const app = express()
 const server = createServer(app)
@@ -114,9 +116,10 @@ io.on("connection", (socket) => {
     if (userIdMap.has(userId)) {
       // If the user's ID exists, retrieve the associated objects
       const objectsForUser = userIdMap.get(userId)
+      const dataToReturn = removeDublicateObject(objectsForUser, "fromUser")
 
       // Send the objects back to the user
-      socket.emit("counts-message-for-user", objectsForUser)
+      socket.emit("counts-message-for-user", dataToReturn)
     }
 
     /* when user is disconnecting  */
@@ -354,9 +357,19 @@ io.on("connection", (socket) => {
 
   socket.on("append-msg", (data) => {
     const from = onlineUsers.get(data.from)
+    const to = lastVisit.get(data.to)
 
     if (from) {
       socket.emit("append-msg-me", data)
+    }
+
+    if (userIdMap.has(data.to)) {
+      const objectsForUser = userIdMap.get(data.to)
+      const dataToReturn = removeDublicateObject(objectsForUser, "fromUser")
+
+      // Send the objects back to the user
+      console.log(to, "data")
+      socket.to(to.socketId).emit("counts-message-for-user", dataToReturn)
     }
   })
 
@@ -386,9 +399,27 @@ io.on("connection", (socket) => {
     if (userIdMap.has(messageId.user)) {
       // If the user's ID exists, retrieve the associated objects
       const objectsForUser = userIdMap.get(messageId.user)
+      console.log(objectsForUser, "objects for user")
 
+      const dataToReturn = removeDublicateObject(objectsForUser, "fromUser")
       // Send the objects back to the user
-      socket.to(senderSocketId).emit("counts-message-for-user", objectsForUser)
+      socket.to(senderSocketId).emit("counts-message-for-user", dataToReturn)
+    }
+  })
+
+  socket.on("updateUnreadCount", (data) => {
+    const { myId, userId } = data
+
+    const getUser = userIdMap.get(myId)
+
+    if (getUser) {
+      const updatedData = updateUnreadCount(userId, getUser)
+      console.log(userIdMap)
+      // userIdMap.set(myId, userIdMap)
+      const updatedUser = userIdMap.get(myId)
+      const dataToReturn = removeDublicateObject(updatedUser, "fromUser")
+
+      socket.emit("update-unread-count-result", dataToReturn)
     }
   })
 
@@ -431,7 +462,7 @@ io.on("connection", (socket) => {
     }
   })
 
-  /* send to oponent unread message count */
+  /* send to all oponent unread message count */
   socket.on("unread-message-count", (data) => {
     saveDataByUserId(data, userIdMap)
     const oponent = onlineUsers.get(data.userId)
