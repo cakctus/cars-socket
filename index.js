@@ -72,8 +72,6 @@ io.on("connection", (socket) => {
     // Store the socket in the user's sockets map
     sockets.set(sessionId, socket)
 
-    console.log(socket[userId])
-
     /* set user in a map */
     onlineUsers.set(userId, socket.id)
 
@@ -137,9 +135,9 @@ io.on("connection", (socket) => {
 
       // Check if the disconnected socket is the first session for this user
       if (sessionId === firstTabSessionId) {
-        console.log(
-          `The first tab for user  ${sessionId} and firstTabSessionId ${firstTabSessionId} disconnected. ${userId}`
-        )
+        // console.log(
+        //   `The first tab for user  ${sessionId} and firstTabSessionId ${firstTabSessionId} disconnected. ${userId}`
+        // )
         // Handle the disconnect of the first tab for this user here
       }
 
@@ -357,19 +355,18 @@ io.on("connection", (socket) => {
 
   socket.on("append-msg", (data) => {
     const from = onlineUsers.get(data.from)
-    const to = lastVisit.get(data.to)
+    const to = onlineUsers.get(data.to)
 
     if (from) {
       socket.emit("append-msg-me", data)
     }
 
+    const objectsForUser = userIdMap.get(data.to)
+
     if (userIdMap.has(data.to)) {
       const objectsForUser = userIdMap.get(data.to)
       const dataToReturn = removeDublicateObject(objectsForUser, "fromUser")
-
-      // Send the objects back to the user
-      console.log(to, "data")
-      socket.to(to.socketId).emit("counts-message-for-user", dataToReturn)
+      socket.to(to).emit("counts-message-for-user", dataToReturn)
     }
   })
 
@@ -383,7 +380,7 @@ io.on("connection", (socket) => {
   /* sended when user receiving bottom of div element */
   socket.on("message-read", (messageId) => {
     const senderSocketId = onlineUsers.get(messageId.user)
-    console.log(messageId, "message-read")
+
     /* Notify the sender that the message has been read */
     if (senderSocketId) {
       // connectedUsers.emit("message-read-notification", messageId)
@@ -396,10 +393,11 @@ io.on("connection", (socket) => {
       })
     }
 
+    const objectsForUser = userIdMap.get(messageId.user)
+
     if (userIdMap.has(messageId.user)) {
       // If the user's ID exists, retrieve the associated objects
       const objectsForUser = userIdMap.get(messageId.user)
-      console.log(objectsForUser, "objects for user")
 
       const dataToReturn = removeDublicateObject(objectsForUser, "fromUser")
       // Send the objects back to the user
@@ -414,7 +412,6 @@ io.on("connection", (socket) => {
 
     if (getUser) {
       const updatedData = updateUnreadCount(userId, getUser)
-      console.log(userIdMap)
       // userIdMap.set(myId, userIdMap)
       const updatedUser = userIdMap.get(myId)
       const dataToReturn = removeDublicateObject(updatedUser, "fromUser")
@@ -424,7 +421,6 @@ io.on("connection", (socket) => {
   })
 
   socket.on("read-message-database", (msg) => {
-    console.log(msg, "read database")
     const me = onlineUsers.get(msg.me)
 
     if (me) {
@@ -434,23 +430,15 @@ io.on("connection", (socket) => {
     }
   })
 
-  socket.on("message-read-response", (response) => {
-    console.log(response)
-  })
+  socket.on("message-read-response", (response) => {})
 
+  /* refetch chats when i send message from detail page for recipient */
   socket.on("add-chat", (data) => {
     const recipient = onlineUsers.get(data.id)
-    const sender = onlineUsers.get(data.myId)
 
     if (recipient) {
       socket.to(recipient).emit("added-chat", data)
-      console.log("recipient", data)
     }
-
-    // if (sender) {
-    //   socket.emit("added-chat", data)
-    //   console.log("sender", data)
-    // }
   })
 
   /* remove local user state when remove chat for recipient */
@@ -460,22 +448,59 @@ io.on("connection", (socket) => {
     if (recipient) {
       socket.to(recipient).emit("remove-local-user", data)
     }
+
+    if (userIdMap.has(data.userId)) {
+      // If the user's ID exists, retrieve the associated objects
+      const objectsForUser = userIdMap.get(data.userId)
+      const dataToReturn = removeDublicateObject(objectsForUser, "fromUser")
+
+      const newData = dataToReturn.map((message) => {
+        if (message.fromUser === data.myId) {
+          message.unreadCount = 0
+
+          return message
+        }
+        return message
+      })
+
+      // Send the objects back to the user
+      // socket.emit("counts-message-for-user", dataToReturn)
+    }
   })
 
   /* send to all oponent unread message count */
   socket.on("unread-message-count", (data) => {
     saveDataByUserId(data, userIdMap)
-    const oponent = onlineUsers.get(data.userId)
-    console.log("unread message count", data)
-    if (oponent) {
-      // socket.to(oponent).emit("unread-message-count-from-oponent", data)
-      socket.to(oponent).emit("unread-message-count-from-oponent", data)
+    const to = onlineUsers.get(data.userId)
+    // const oponent = onlineUsers.get(data.userId)
+
+    // if (oponent) {
+    //   socket.to(oponent).emit("unread-message-count-from-oponent", data)
+    // }
+
+    if (userIdMap.has(data.userId)) {
+      // If the user's ID exists, retrieve the associated objects
+      const objectsForUser = userIdMap.get(data.userId)
+      const dataToReturn = removeDublicateObject(objectsForUser, "fromUser")
+
+      const newData = dataToReturn.map((message) => {
+        if (message.fromUser === data.myId) {
+          message.unreadCount = data.unreadCount
+
+          return message
+        }
+        return message
+      })
+      console.log(data, "data")
+      // Send the objects back to the user
+      socket.to(to).emit("counts-message-for-user", newData)
     }
+
+    // socket.emit("update-count-unread", { ...data })
   })
 
   socket.on("oponent-read-message-count", (data) => {
     const me = onlineUsers.get(data.to)
-    console.log("opoenntread chat count", data)
     if (me) {
       socket.to(me).emit("oponent-read-message-count-mySelf", data)
     }
@@ -496,6 +521,27 @@ io.on("connection", (socket) => {
     } else {
       /*if recipient is not online send recevied false */
       socket.emit("message-sended", {
+        from: data.from,
+        received: false,
+        to: data.to,
+      })
+    }
+  })
+
+  socket.on("check-if-received-from-detail-page", (data) => {
+    const recipient = onlineUsers.get(data.to)
+    // const sender = onlineUsers.get(message.from)
+
+    if (recipient) {
+      /*if recipient is online send recevied true */
+      socket.emit("check-if-received-from-detail-page-result", {
+        from: data.from,
+        received: true,
+        to: data.to,
+      })
+    } else {
+      /*if recipient is not online send recevied false */
+      socket.emit("check-if-received-from-detail-page-result", {
         from: data.from,
         received: false,
         to: data.to,
@@ -525,7 +571,7 @@ io.on("connection", (socket) => {
 
   socket.on("update-message-received", (data) => {
     const user = onlineUsers.get(data.to)
-    console.log("update-message-received")
+
     if (user) {
       socket.emit("message-sended3", {
         from: data.from,
