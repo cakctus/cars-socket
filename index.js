@@ -465,6 +465,7 @@ io.on("connection", (socket) => {
 
       // Send the objects back to the user
       // socket.emit("counts-message-for-user", dataToReturn)
+      socket.to(recipient).emit("counts-message-for-user", dataToReturn)
     }
   })
 
@@ -495,8 +496,6 @@ io.on("connection", (socket) => {
       // Send the objects back to the user
       socket.to(to).emit("counts-message-for-user", newData)
     }
-
-    // socket.emit("update-count-unread", { ...data })
   })
 
   socket.on("oponent-read-message-count", (data) => {
