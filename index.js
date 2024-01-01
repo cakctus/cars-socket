@@ -8,15 +8,20 @@ import axios from "axios"
 // socket.io
 import { Server } from "socket.io"
 // http
-import { createServer } from "http"
+import { createServer } from "https"
 import { randomUUID } from "node:crypto"
+import fs from "fs"
 // utils
 import saveDataByUserId from "./utils/saveKeyByUseId.js"
 import removeDublicateObject from "./utils/removeDuplicateObject.js"
 import updateUnreadCount from "./utils/updateUnreadCount.js"
 
 const app = express()
-const server = createServer(app)
+const options = {
+  key: fs.readFileSync("./ssl/key.pem"),
+  cert: fs.readFileSync("./ssl/cert.pem"),
+}
+const server = createServer(options, app)
 const clientUrl = process.env.CLIENT_URL
 const serverUrl = process.env.SERVER_URL
 
@@ -366,6 +371,7 @@ io.on("connection", (socket) => {
     if (userIdMap.has(data.to)) {
       const objectsForUser = userIdMap.get(data.to)
       const dataToReturn = removeDublicateObject(objectsForUser, "fromUser")
+
       socket.to(to).emit("counts-message-for-user", dataToReturn)
     }
   })
@@ -492,7 +498,7 @@ io.on("connection", (socket) => {
         }
         return message
       })
-      console.log(data, "data")
+
       // Send the objects back to the user
       socket.to(to).emit("counts-message-for-user", newData)
     }
